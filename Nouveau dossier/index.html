@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+  <meta charset="UTF-8">
+  <title>مواقيت الصلاة</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#007bff">
+  <link rel="manifest" href="manifest.json">
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      direction: rtl;
+      text-align: center;
+      background: url('https://i.imgur.com/eDzNyOd.jpg') no-repeat center center fixed;
+      background-size: cover;
+      color: white;
+      margin: 0;
+      padding: 0;
+    }
+    header {
+      background: rgba(0, 0, 0, 0.6);
+      padding: 20px;
+    }
+    h1 {
+      color: #ffdd57;
+      margin: 0;
+    }
+    button {
+      margin-top: 20px;
+      padding: 12px 25px;
+      font-size: 16px;
+      background-color: #28a745;
+      border: none;
+      color: white;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    #prayer-times {
+      background: rgba(0, 0, 0, 0.7);
+      padding: 25px;
+      margin: 30px auto;
+      width: 90%;
+      max-width: 400px;
+      border-radius: 15px;
+      box-shadow: 0 0 20px rgba(0,0,0,0.5);
+    }
+    #prayer-times p { font-size: 18px; }
+    #prayer-times h2 { color: #ffdd57; }
+    .icon {
+      width: 25px;
+      vertical-align: middle;
+      margin-left: 6px;
+    }
+    footer {
+      margin-top: 30px;
+      padding: 10px;
+      font-size: 14px;
+      color: #ddd;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🕌 مواقيت الصلاة حسب موقعك</h1>
+</header>
+
+<button onclick="getLocation()">📍 عرض المواقيت</button>
+
+<div id="prayer-times"></div>
+
+<footer>© 2025 | تطبيق مواقيت الصلاة</footer>
+
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('service-worker.js')
+      .then(() => console.log("✅ تم تسجيل Service Worker"));
+  }
+
+  function getLocation() {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(showPrayerTimes, showError);
+    } else {
+      alert("المتصفح لا يدعم تحديد الموقع.");
+    }
+  }
+
+  async function showPrayerTimes(position) {
+    const lat = position.coords.latitude;
+    const lon = position.coords.longitude;
+
+    const locUrl = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=ar`;
+    let city = '', state = '', country = '';
+    try {
+      const locRes = await fetch(locUrl);
+      const locData = await locRes.json();
+      city = locData.address.city || locData.address.town || locData.address.village || '';
+      state = locData.address.state || '';
+      country = locData.address.country || '';
+    } catch (e) {
+      console.warn("فشل في جلب اسم الموقع.");
+    }
+
+    const prayerUrl = `https://api.aladhan.com/v1/timings?latitude=${lat}&longitude=${lon}&method=4`;
+    try {
+      const res = await fetch(prayerUrl);
+      const data = await res.json();
+      const timings = data.data.timings;
+      const date = data.data.date.readable;
+
+      const output = `
+        <h2>🗓️ ${date}</h2>
+        <p><strong>📍 الموقع:</strong> ${city} - ${state} - ${country}</p>
+        <p><img class="icon" src="https://cdn-icons-png.flaticon.com/512/2936/2936904.png" /> الفجر: ${timings.Fajr}</p>
+        <p><img class="icon" src="https://cdn-icons-png.flaticon.com/512/1163/1163661.png" /> الشروق: ${timings.Sunrise}</p>
+        <p><img class="icon" src="https://cdn-icons-png.flaticon.com/512/2936/2936923.png" /> الظهر: ${timings.Dhuhr}</p>
+        <p><img class="icon" src="https://cdn-icons-png.flaticon.com/512/2936/2936901.png" /> العصر: ${timings.Asr}</p>
+        <p><img class="icon" src="https://cdn-icons-png.flaticon.com/512/2936/2936922.png" /> المغرب: ${timings.Maghrib}</p>
+        <p><img class="icon" src="https://cdn-icons-png.flaticon.com/512/2936/2936908.png" /> العشاء: ${timings.Isha}</p>
+      `;
+      document.getElementById('prayer-times').innerHTML = output;
+
+      const next = getNextPrayer(timings);
+      if (next.name) {
+        startCountdown(next.time, next.name);
+      }
+
+    } catch (error) {
+      alert('حدث خطأ في جلب مواقيت الصلاة.');
+      console.error(error);
+    }
+  }
+
+  function getNextPrayer(timings) {
+    const order = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+    const now = new Date();
+    for (const prayer of order) {
+      const [h, m] = timings[prayer].split(':');
+      const prayerTime = new Date();
+      prayerTime.setHours(+h, +m, 0, 0);
+      if (prayerTime > now) {
+        return { name: prayer, time: prayerTime };
+      }
+    }
+    return { name: 'Fajr', time: new Date(now.setDate(now.getDate() + 1)).setHours(5, 0, 0, 0) };
+  }
+
+  function startCountdown(prayerTime, prayerName) {
+    const el = document.createElement('p');
+    document.getElementById('prayer-times').appendChild(el);
+
+    function update() {
+      const now = new Date();
+      const diff = prayerTime - now;
+      if (diff <= 0) {
+        el.innerHTML = `🕌 حان الآن وقت <strong>${prayerName}</strong>`;
+        showNotification(`🕌 حان وقت صلاة ${prayerName}`);
+        return;
+      }
+      const mins = Math.floor((diff / 1000 / 60) % 60);
+      const hrs = Math.floor(diff / 1000 / 60 / 60);
+      el.innerHTML = `⏳ المتبقي لصلاة <strong>${prayerName}</strong>: ${hrs} ساعة و ${mins} دقيقة`;
+      setTimeout(update, 10000);
+    }
+
+    update();
+  }
+
+  function showNotification(msg) {
+    if (Notification.permission === 'granted') {
+      new Notification(msg);
+    } else if (Notification.permission !== 'denied') {
+      Notification.requestPermission().then(p => {
+        if (p === 'granted') new Notification(msg);
+      });
+    }
+  }
+
+  function showError(error) {
+    alert("فشل في تحديد الموقع.");
+    console.error(error);
+  }
+</script>
+
+</body>
+</html>
